@@ -1,0 +1,1 @@
+{"root":["./src/main.ts","./src/vite-env.d.ts","./src/router/index.ts","./src/stores/forex.ts","./src/types/forex.ts","./src/app.vue","./src/components/currencywidget.vue","./src/components/helloworld.vue"],"version":"5.7.3"}
