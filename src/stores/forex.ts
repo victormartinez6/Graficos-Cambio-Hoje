@@ -45,9 +45,18 @@ export const useForexStore = defineStore('forex', {
         const currencies = ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY'];
         const currencyPairs = currencies.map(curr => `${curr}-BRL`).join(',');
         
+        console.log('Buscando taxas de câmbio...');
+        console.time('fetchRates');
+        
         const response = await axios.get(`https://economia.awesomeapi.com.br/json/last/${currencyPairs}`, {
-          timeout: 2000
+          timeout: 5000, // Aumentado para 5 segundos
+          headers: {
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+          }
         });
+        
+        console.timeEnd('fetchRates');
         
         if (response.data) {
           const newRates: Record<string, ForexRate> = {};
@@ -64,11 +73,24 @@ export const useForexStore = defineStore('forex', {
             const currentRate = parseFloat(data.ask);
             const previousDayRate = this.previousDayRates[currency];
             
+            // Validação dos dados
+            if (isNaN(currentRate)) {
+              console.error(`Taxa inválida para ${currency}: ${data.ask}`);
+              return;
+            }
+            
             const changeToday = previousDayRate 
               ? ((currentRate - previousDayRate) / previousDayRate) * 100 
               : 0;
 
-            console.log(`${currency} - Taxa atual: ${currentRate}, Fechamento anterior: ${previousDayRate}, Variação: ${changeToday.toFixed(2)}%`);
+            // Log detalhado para debugging
+            console.log(`${currency}:`, {
+              taxa: currentRate.toFixed(4),
+              fechamentoAnterior: previousDayRate?.toFixed(4) || 'N/A',
+              variacao24h: `${parseFloat(data.pctChange).toFixed(2)}%`,
+              variacaoHoje: `${changeToday.toFixed(2)}%`,
+              timestamp: new Date(parseInt(data.timestamp) * 1000).toLocaleString()
+            });
             
             this.lastRates[currency] = currentRate;
             
@@ -82,7 +104,11 @@ export const useForexStore = defineStore('forex', {
             };
           });
           
-          if (JSON.stringify(this.rates) !== JSON.stringify(newRates)) {
+          // Verifica se houve mudança nas taxas
+          const ratesChanged = JSON.stringify(this.rates) !== JSON.stringify(newRates);
+          
+          if (ratesChanged) {
+            console.log('Taxas atualizadas:', new Date().toLocaleString());
             console.table(Object.values(newRates).map(r => ({
               moeda: r.currency,
               taxa: r.rate.toFixed(4),
@@ -91,10 +117,24 @@ export const useForexStore = defineStore('forex', {
               horário: new Date(r.timestamp * 1000).toLocaleTimeString()
             })));
             this.rates = newRates;
+          } else {
+            console.log('Nenhuma mudança nas taxas');
           }
         }
       } catch (error) {
-        console.error('Erro ao buscar taxas:', error);
+        if (axios.isAxiosError(error)) {
+          if (error.code === 'ECONNABORTED') {
+            console.error('Timeout ao buscar taxas. A API demorou muito para responder.');
+          } else if (error.response) {
+            console.error('Erro da API:', error.response.status, error.response.data);
+          } else if (error.request) {
+            console.error('Sem resposta da API. Verifique sua conexão.');
+          } else {
+            console.error('Erro ao fazer requisição:', error.message);
+          }
+        } else {
+          console.error('Erro desconhecido:', error);
+        }
       } finally {
         this.loading = false;
       }
